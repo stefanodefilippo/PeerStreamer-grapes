@@ -1,6 +1,8 @@
 #ifndef TOPO_PROTO
 #define TOPO_PROTO
 
+#define SENDING_ID_SET_PERIOD 4
+
 struct topo_context;
 
 int topo_reply(struct topo_context *context, const struct peer_cache *c, const struct peer_cache *local_cache, int protocol, int type, int max_peers, int include_me);

@@ -98,3 +98,8 @@ int psample_remove_peer(struct psample_context *tc, const struct nodeID *neighbo
 {
   return tc->ps->remove_neighbour(tc->ps_context, neighbour);
 }
+
+int psample_update_flow_id_set(struct psample_context *tc)
+{
+  return tc->ps->update_flow_id_set(tc->ps_context);
+}

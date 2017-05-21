@@ -1,8 +1,11 @@
 #ifndef TOPOCACHE
 #define TOPOCACHE
 
+#define MAX_FLOW_IDS 10
+
 struct peer_cache;
 struct cache_entry;
+struct id_entry;
 typedef int (*ranking_function)(const void *target, const void *p1, const void *p2);    // FIXME!
 
 struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp);
@@ -26,6 +29,9 @@ struct peer_cache *rand_cache_except(struct peer_cache *c, int n, struct nodeID 
 void cache_randomize(const struct peer_cache *c);
 
 struct peer_cache *entries_undump(const uint8_t *buff, int size);
+struct peer_cache *entries_undump_flow_id(const uint8_t *buff, int size);
+int update_random_flow_id_set(struct peer_cache *c);
+int get_flow_id(int index, const struct peer_cache *c);
 int cache_header_dump(uint8_t *b, const struct peer_cache *c, int include_me);
 int entry_dump(uint8_t *b, const struct peer_cache *e, int i, size_t max_write_size);
 

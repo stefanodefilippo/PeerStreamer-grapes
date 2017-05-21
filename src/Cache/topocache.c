@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+
 #include <stdio.h>
 #undef NDEBUG
 #include <assert.h>
@@ -21,6 +23,11 @@ struct cache_entry {
   uint32_t timestamp;
 };
 
+struct id_entry {
+  struct nodeID *node_id;
+  int flow_id;
+};
+
 struct peer_cache {
   struct cache_entry *entries;
   int cache_size;
@@ -28,6 +35,9 @@ struct peer_cache {
   int metadata_size;
   uint8_t *metadata;
   int max_timestamp;
+  int num_flows;
+  struct id_entry *flow_id_set;
+  int sending_id_set_cycles;
 };
 
 static int cache_insert(struct peer_cache *c, struct cache_entry *e, const void *meta)
@@ -74,6 +84,29 @@ static int cache_insert(struct peer_cache *c, struct cache_entry *e, const void 
   c->entries[position] = *e;
   memcpy(c->metadata + position * c->metadata_size, meta, c->metadata_size);
 
+  return position;
+}
+
+static int cache_insert_flow_id(struct peer_cache *c, struct nodeID *neighbour, int flow_id)
+{
+  int i, position;
+
+  if (c->num_flows == MAX_FLOW_IDS) {
+    return -2;
+  }
+
+  for (i = 0; i < c->num_flows; i++) {
+
+    if (flow_id == c->flow_id_set[i].flow_id) {
+        return -1;
+      }
+
+    }
+
+  c->flow_id_set[c->num_flows].flow_id = flow_id;
+  c->flow_id_set[c->num_flows].node_id = neighbour;
+  c->num_flows++;
+  
   return position;
 }
 
@@ -236,6 +269,29 @@ void cache_update(struct peer_cache *c)
   cache_delay(c, 1);
 }
 
+int update_random_flow_id_set(struct peer_cache *c)
+{
+    srand(time(NULL) + getpid());
+    int r;
+    fprintf(stderr, "update_random_flow_id_set: AGGIORNAMENTO CASUALE DEL FLOW_ID_SET LOCALE....\n");
+    for(int i = 0; i < MAX_FLOW_IDS; i++){
+        fprintf(stderr, "update_random_flow_id_set: FLOW_ID AGGIORNATO DA %d ", c->flow_id_set[i].flow_id);
+        r = rand() % 100;
+        c->flow_id_set[i].flow_id = r;
+        fprintf(stderr, "A %d\n", c->flow_id_set[i].flow_id);
+    }
+    
+}
+
+int get_sending_id_set_cycles(struct peer_cache *c)
+{
+    return c->sending_id_set_cycles; 
+}
+
+int set_sending_id_set_cycles(struct peer_cache *c, int value)
+{
+    c->sending_id_set_cycles = value; 
+}
 
 struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
 {
@@ -248,6 +304,7 @@ struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
   res->max_timestamp = max_timestamp;
   res->cache_size = n;
   res->current_size = 0;
+  res->num_flows = 0;
   res->entries = malloc(sizeof(struct cache_entry) * n);
   if (res->entries == NULL) {
     free(res);
@@ -255,7 +312,17 @@ struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
     return NULL;
   }
   
+  res->flow_id_set = malloc(sizeof(struct id_entry) * MAX_FLOW_IDS);
+  if (res->flow_id_set == NULL) {
+    free(res);
+
+    return NULL;
+  }
+  
   memset(res->entries, 0, sizeof(struct cache_entry) * n);
+  memset(res->flow_id_set, 0, sizeof(struct id_entry) * MAX_FLOW_IDS);
+  res->sending_id_set_cycles = 0;
+  
   if (metadata_size) {
     res->metadata = malloc(metadata_size * n);
   } else {
@@ -524,10 +591,55 @@ struct peer_cache *entries_undump(const uint8_t *buff, int size)
       meta += metadata_size;
     }
   }
-  res->current_size = i;
+  res->current_size = i;  
   assert(p - buff == size);
 
   return res;
+}
+
+
+struct peer_cache *entries_undump_flow_id(const uint8_t *buff, int size)
+{
+  struct peer_cache *res;
+  int i = 0;
+  const uint8_t *p = buff;
+  uint8_t *meta;
+  int cache_size, metadata_size;
+
+  cache_size = int_rcpy(buff);
+  metadata_size = int_rcpy(buff + 4);
+  p = buff + 8;
+  res = cache_init(cache_size, metadata_size, 0);
+  meta = res->metadata;
+  while (p - buff < size) {
+    int len;
+
+    res->entries[i].timestamp = int_rcpy(p);
+    p += sizeof(uint32_t);
+    res->entries[i++].id = nodeid_undump(p, &len);
+    p += len;
+    if (metadata_size) {
+      memcpy(meta, p, metadata_size);
+      p += metadata_size;
+      meta += metadata_size;
+    }
+  }
+  res->current_size = i;
+  
+  
+  assert(p - buff == size);
+  
+  fprintf(stderr, "RECUPERO GLI ID RICEVUTI DAL VICINO....\n", *(p));
+  for(int i = 0; i < MAX_FLOW_IDS; i++){
+      fprintf(stderr, "entries_undump_flow_id: ID FLUSSO RICEVUTO DAL VICINO: %d\n", *(p));
+      p = p + sizeof(int);
+  }
+
+  return res;
+}
+
+int get_flow_id(int index, const struct peer_cache *c){
+    return c->flow_id_set[index].flow_id;
 }
 
 int cache_header_dump(uint8_t *b, const struct peer_cache *c, int include_me)

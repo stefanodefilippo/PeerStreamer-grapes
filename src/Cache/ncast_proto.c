@@ -72,3 +72,7 @@ int ncast_proto_metadata_update(struct ncast_proto_context *context, const void 
 int ncast_proto_myentry_update(struct ncast_proto_context *context, struct nodeID *s, int dts, const void *meta, int meta_size) {
   return topo_proto_myentry_update(context->context, s, dts, meta, meta_size);
 }
+
+int ncast_update_random_flow_id_set(struct ncast_proto_context *context){
+    return topo_update_random_flow_id_set(context->context);
+}

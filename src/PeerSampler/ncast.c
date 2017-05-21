@@ -72,6 +72,10 @@ static struct peersampler_context* ncast_context_init(void)
   return con;
 }
 
+static int ncast_update_flow_id_set(struct peersampler_context *context){
+    return ncast_update_random_flow_id_set(context->tc);
+}
+
 static int time_to_send(struct peersampler_context *context)
 {
   int p = context->bootstrap ? context->bootstrap_period : context->period;
@@ -187,7 +191,14 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
       ncast_proto_myentry_update(context->tc, NULL , - context->first_ts, NULL, 0);  // reset the timestamp of our own ID, we are in normal cycle, we will not disturb the algorithm
     }
 
-    remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
+    if(h->subtype == WITH_FLOW_IDS_OFFER){
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
+        remote_cache = entries_undump_flow_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - MAX_FLOW_IDS*sizeof(int));
+    }else{
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+        remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
+    }
+    
     if (h->type == NCAST_QUERY) {
       context->reply_tokens--;	//sending a reply to someone who presumably receives it
       cache_randomize(context->local_cache);
@@ -288,6 +299,7 @@ struct peersampler_iface ncast = {
   .grow_neighbourhood = ncast_grow_neighbourhood,
   .shrink_neighbourhood = ncast_shrink_neighbourhood,
   .remove_neighbour = ncast_remove_neighbour,
+  .update_flow_id_set = ncast_update_flow_id_set,
 };
 
 struct peersampler_iface ncastplus = {
@@ -300,4 +312,5 @@ struct peersampler_iface ncastplus = {
   .grow_neighbourhood = ncast_grow_neighbourhood,
   .shrink_neighbourhood = ncast_shrink_neighbourhood,
   .remove_neighbour = ncast_remove_neighbour,
+  .update_flow_id_set = ncast_update_flow_id_set,
 };

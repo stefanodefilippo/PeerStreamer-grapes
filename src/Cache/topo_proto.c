@@ -50,7 +50,15 @@ static int topo_payload_fill(struct topo_context *context, uint8_t *payload, int
 int topo_reply_header(struct topo_context *context, const struct peer_cache *c, const struct peer_cache *local_cache, int protocol,
                       int type, uint8_t *header, int header_len, int max_peers, int include_me)
 {
-  struct topo_header *h = (struct topo_header *)context->pkt;
+     
+   fprintf(stderr, "topo_reply_header: RECUPERO IL FLOW_ID_SET LOCALE PER SPEDIRLO\n");
+   
+   int local_id_set[MAX_FLOW_IDS];
+   for(int i = 0; i < MAX_FLOW_IDS; i++){
+       local_id_set[i] = get_flow_id(i, context->myEntry);
+   }
+
+   struct topo_header *h = (struct topo_header *)context->pkt;
   int len, res, shift;
   struct nodeID *dst;
 
@@ -74,9 +82,28 @@ int topo_reply_header(struct topo_context *context, const struct peer_cache *c, 
   h->type = type;
   len = topo_payload_fill(context, context->pkt + shift, context->pkt_size - shift, local_cache, dst, max_peers, include_me);
 
-  res = len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
-
-  return res;
+  int *id_set;
+  id_set = local_id_set;//context->id_set;
+  uint8_t *pkt;
+  if(get_sending_id_set_cycles(context->myEntry) != SENDING_ID_SET_PERIOD){
+    
+      h->subtype = WITHOUT_FLOW_IDS_OFFER;
+    set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
+    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
+  
+  }else{
+    
+      h->subtype = WITH_FLOW_IDS_OFFER;
+    pkt = (uint8_t*)malloc(shift + len + MAX_FLOW_IDS*sizeof(int));
+    memcpy(pkt, context->pkt, shift + len);
+    memcpy(pkt + shift + len, id_set, MAX_FLOW_IDS*sizeof(int));
+    set_sending_id_set_cycles(context->myEntry, 0);
+    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + MAX_FLOW_IDS*sizeof(int)) : len;
+  
+  }
+  
 }
 
 int topo_reply(struct topo_context *context, const struct peer_cache *c, const struct peer_cache *local_cache, int protocol, int type, int max_peers, int include_me)
@@ -87,6 +114,14 @@ int topo_reply(struct topo_context *context, const struct peer_cache *c, const s
 int topo_query_peer_header(struct topo_context *context, const struct peer_cache *local_cache, struct nodeID *dst, int protocol, int type,
                            uint8_t *header, int header_len, int max_peers)
 {
+    
+   fprintf(stderr, "topo_query_peer_header: RECUPERO IL FLOW_ID_SET LOCALE PER SPEDIRLO\n");
+   
+   int local_id_set[MAX_FLOW_IDS];
+   for(int i = 0; i < MAX_FLOW_IDS; i++){
+       local_id_set[i] = get_flow_id(i, context->myEntry);
+   }
+    
   struct topo_header *h = (struct topo_header *)context->pkt;
   int len, shift;
 
@@ -102,7 +137,33 @@ int topo_query_peer_header(struct topo_context *context, const struct peer_cache
   h->type = type;
   len = topo_payload_fill(context, context->pkt + shift, context->pkt_size - shift, local_cache, dst, max_peers, 1);
   //fprintf(stderr,"[DEBUG] sending TOPO to peer \n");
-  return len > 0  ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
+  
+  int *id_set;
+  id_set = local_id_set;//context->id_set;
+  uint8_t *pkt;
+  if(get_sending_id_set_cycles(context->myEntry) != SENDING_ID_SET_PERIOD){
+    
+      h->subtype = WITHOUT_FLOW_IDS_OFFER;
+    set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
+    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
+  
+  }else{
+    
+      h->subtype = WITH_FLOW_IDS_OFFER;
+    pkt = (uint8_t*)malloc(shift + len + MAX_FLOW_IDS*sizeof(int));
+    memcpy(pkt, context->pkt, shift + len);
+    memcpy(pkt + shift + len, id_set, MAX_FLOW_IDS*sizeof(int));
+    set_sending_id_set_cycles(context->myEntry, 0);
+    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + MAX_FLOW_IDS*sizeof(int)) : len;
+  
+  }
+  
+}
+int topo_update_random_flow_id_set(struct topo_context *context)
+{
+    return update_random_flow_id_set(context->myEntry);
 }
 
 int topo_query_peer(struct topo_context *context, const struct peer_cache *local_cache, struct nodeID *dst, int protocol, int type, int max_peers)
@@ -150,7 +211,7 @@ struct topo_context* topo_proto_init(struct nodeID *s, const void *meta, int met
 
     return NULL;
   }
-
+  
   con->myEntry = cache_init(1, meta_size, 0);
   cache_add(con->myEntry, s, meta, meta_size);
 
