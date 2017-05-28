@@ -1,7 +1,7 @@
 #ifndef TOPO_PROTO
 #define TOPO_PROTO
 
-#define SENDING_ID_SET_PERIOD 4
+//#define SENDING_ID_SET_PERIOD 4
 
 struct topo_context;
 

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "net_helper.h"
 #include "peersampler.h"
@@ -99,7 +100,17 @@ int psample_remove_peer(struct psample_context *tc, const struct nodeID *neighbo
   return tc->ps->remove_neighbour(tc->ps_context, neighbour);
 }
 
-int psample_update_flow_id_set(struct psample_context *tc)
+int psample_update_random_session_id_set(struct psample_context *tc)
 {
-  return tc->ps->update_flow_id_set(tc->ps_context);
+  return tc->ps->update_random_session_id_set(tc->ps_context);
+}
+
+void psample_add_session_id(struct psample_context *tc, int session_id)
+{
+  return tc->ps->add_session_id(tc->ps_context, session_id);
+}
+
+void psample_set_distributed(struct psample_context *tc, int session_id, bool value)
+{
+  return tc->ps->set_distributed(tc->ps_context, session_id, value);
 }

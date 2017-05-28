@@ -10,6 +10,6 @@ int ncast_query(struct ncast_proto_context *context, const struct peer_cache *lo
 int ncast_query_peer(struct ncast_proto_context *context, const struct peer_cache *local_cache, struct nodeID *dst);
 int ncast_proto_metadata_update(struct ncast_proto_context *context, const void *meta, int meta_size);
 int ncast_proto_myentry_update(struct ncast_proto_context *context, struct nodeID *s, int dts, const void *meta, int meta_size);
-int ncast_update_random_flow_id_set(struct ncast_proto_context *context);
+int ncast_proto_update_random_session_id_set(struct ncast_proto_context *context);
 
 #endif	/* NCAST_PROTO */

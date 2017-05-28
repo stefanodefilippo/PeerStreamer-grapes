@@ -17,7 +17,7 @@ struct topo_header {
 #define CLOUDCAST_REPLY 0x08
 #define CLOUDCAST_CLOUD 0x09
 
-#define WITH_FLOW_IDS_OFFER 0x10
-#define WITHOUT_FLOW_IDS_OFFER 0x11
+#define WITH_SESSION_IDS_OFFER 0x10
+#define WITHOUT_SESSION_IDS_OFFER 0x11
 
 #endif  /* PROTO */

@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "net_helper.h"
 #include "topocache.h"
@@ -73,6 +74,22 @@ int ncast_proto_myentry_update(struct ncast_proto_context *context, struct nodeI
   return topo_proto_myentry_update(context->context, s, dts, meta, meta_size);
 }
 
-int ncast_update_random_flow_id_set(struct ncast_proto_context *context){
-    return topo_update_random_flow_id_set(context->context);
+int ncast_proto_update_random_session_id_set(struct ncast_proto_context *context){
+    return topo_update_random_session_id_set(context->context);
+}
+
+bool ncast_proto_update_session_id_set(struct ncast_proto_context *context, struct peer_cache *remote_cache){
+    return topo_proto_update_session_id_set(context->context, remote_cache);
+}
+
+int ncast_proto_set_time_to_send_session_id_set(struct ncast_proto_context *context, bool value){
+    return topo_set_time_to_send_session_id_set(context->context, value);
+}
+
+void ncast_proto_add_session_id(struct ncast_proto_context *context, int session_id){
+    return topo_proto_add_session_id(context->context, session_id);
+}
+
+void ncast_proto_set_distributed(struct ncast_proto_context *context, int session_id, bool value){
+    return topo_proto_set_distributed(context->context, session_id, value);
 }

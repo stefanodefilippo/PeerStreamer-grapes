@@ -72,8 +72,18 @@ static struct peersampler_context* ncast_context_init(void)
   return con;
 }
 
-static int ncast_update_flow_id_set(struct peersampler_context *context){
-    return ncast_update_random_flow_id_set(context->tc);
+static int ncast_update_random_session_id_set(struct peersampler_context *context){
+    return ncast_proto_update_random_session_id_set(context->tc);
+}
+
+static void ncast_add_session_id(struct peersampler_context *context, int session_id)
+{
+    return ncast_proto_add_session_id(context->tc, session_id);
+}
+
+static void ncast_set_distributed(struct peersampler_context *context, int session_id, bool value)
+{
+    return ncast_proto_set_distributed(context->tc, session_id, value);
 }
 
 static int time_to_send(struct peersampler_context *context)
@@ -174,6 +184,7 @@ static int ncast_add_neighbour(struct peersampler_context *context, struct nodeI
 static int ncast_parse_data(struct peersampler_context *context, const uint8_t *buff, int len)
 {
   int dummy;
+  bool session_id_set_changed;
 
   if (len) {
     const struct topo_header *h = (const struct topo_header *)buff;
@@ -191,11 +202,11 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
       ncast_proto_myentry_update(context->tc, NULL , - context->first_ts, NULL, 0);  // reset the timestamp of our own ID, we are in normal cycle, we will not disturb the algorithm
     }
 
-    if(h->subtype == WITH_FLOW_IDS_OFFER){
-        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
-        remote_cache = entries_undump_flow_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - MAX_FLOW_IDS*sizeof(int));
+    if(h->subtype == WITH_SESSION_IDS_OFFER){
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET\n");
+        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*MAX_SESSION_IDS*sizeof(int));
     }else{
-        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA SENZA SESSION_ID_SET\n");
         remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
     }
     
@@ -209,6 +220,12 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
     cache_randomize(context->local_cache);
     cache_randomize(remote_cache);
     new = merge_caches(context->local_cache, remote_cache, context->cache_size, &dummy);
+    if(h->subtype == WITH_SESSION_IDS_OFFER){
+        session_id_set_changed = ncast_proto_update_session_id_set(context->tc, remote_cache);
+    }
+    if(session_id_set_changed){
+        //ncast_proto_set_time_to_send_session_id_set(context->tc, true); GIA' FATTO NELLA ADD
+    }
     cache_free(remote_cache);
     if (new != NULL) {
       cache_free(context->local_cache);
@@ -299,7 +316,9 @@ struct peersampler_iface ncast = {
   .grow_neighbourhood = ncast_grow_neighbourhood,
   .shrink_neighbourhood = ncast_shrink_neighbourhood,
   .remove_neighbour = ncast_remove_neighbour,
-  .update_flow_id_set = ncast_update_flow_id_set,
+  .update_random_session_id_set = ncast_update_random_session_id_set,
+  .add_session_id = ncast_add_session_id,
+  .set_distributed = ncast_set_distributed,
 };
 
 struct peersampler_iface ncastplus = {
@@ -312,5 +331,7 @@ struct peersampler_iface ncastplus = {
   .grow_neighbourhood = ncast_grow_neighbourhood,
   .shrink_neighbourhood = ncast_shrink_neighbourhood,
   .remove_neighbour = ncast_remove_neighbour,
-  .update_flow_id_set = ncast_update_flow_id_set,
+  .update_random_session_id_set = ncast_update_random_session_id_set,
+  .add_session_id = ncast_add_session_id,
+  .set_distributed = ncast_set_distributed,
 };

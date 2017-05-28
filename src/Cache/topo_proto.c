@@ -8,11 +8,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "net_helper.h"
 #include "topocache.h"
 #include "proto.h"
 #include "topo_proto.h"
+#define NODE_STR_LENGTH 120
 
 struct topo_context{
  struct peer_cache *myEntry;
@@ -51,11 +53,15 @@ int topo_reply_header(struct topo_context *context, const struct peer_cache *c, 
                       int type, uint8_t *header, int header_len, int max_peers, int include_me)
 {
      
-   fprintf(stderr, "topo_reply_header: RECUPERO IL FLOW_ID_SET LOCALE PER SPEDIRLO\n");
+   fprintf(stderr, "topo_reply_header: RECUPERO IL SESSION_ID_SET LOCALE PER SPEDIRLO\n");
    
-   int local_id_set[MAX_FLOW_IDS];
-   for(int i = 0; i < MAX_FLOW_IDS; i++){
-       local_id_set[i] = get_flow_id(i, context->myEntry);
+   int local_id_set[2 * MAX_SESSION_IDS];
+   for(int i = 0; i < MAX_SESSION_IDS; i++){
+       local_id_set[i] = get_session_id(i, context->myEntry);
+   }
+   
+   for(int i = MAX_SESSION_IDS; i < 2 * MAX_SESSION_IDS; i++){
+       local_id_set[i] = get_distributed(i - MAX_SESSION_IDS, context->myEntry);
    }
 
    struct topo_header *h = (struct topo_header *)context->pkt;
@@ -85,22 +91,28 @@ int topo_reply_header(struct topo_context *context, const struct peer_cache *c, 
   int *id_set;
   id_set = local_id_set;//context->id_set;
   uint8_t *pkt;
-  if(get_sending_id_set_cycles(context->myEntry) != SENDING_ID_SET_PERIOD){
+  char str[NODE_STR_LENGTH];
+  node_addr(dst, str, NODE_STR_LENGTH);
+  fprintf(stderr, "NODO A CUI MANDARE: %s\n", str);
+  node_addr(get_last_node_recieved(context->myEntry), str, NODE_STR_LENGTH);
+  fprintf(stderr, "NODO ULTIMO RICEVUTO: %s\n", str);
+  if(!is_time_to_send_id_set(context->myEntry) || nodeid_equal(get_last_node_recieved(context->myEntry), dst)){
     
-      h->subtype = WITHOUT_FLOW_IDS_OFFER;
-    set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
-    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+      h->subtype = WITHOUT_SESSION_IDS_OFFER;
+    //set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
+    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA SESSION_ID_SET\n");
     return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
   
   }else{
     
-      h->subtype = WITH_FLOW_IDS_OFFER;
-    pkt = (uint8_t*)malloc(shift + len + MAX_FLOW_IDS*sizeof(int));
+      h->subtype = WITH_SESSION_IDS_OFFER;
+    pkt = (uint8_t*)malloc(shift + len + 2 * MAX_SESSION_IDS*sizeof(int));
     memcpy(pkt, context->pkt, shift + len);
-    memcpy(pkt + shift + len, id_set, MAX_FLOW_IDS*sizeof(int));
-    set_sending_id_set_cycles(context->myEntry, 0);
-    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
-    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + MAX_FLOW_IDS*sizeof(int)) : len;
+    memcpy(pkt + shift + len, id_set, 2 * MAX_SESSION_IDS*sizeof(int));
+    //set_sending_id_set_cycles(context->myEntry, 0);
+    set_time_to_send_id_set(context->myEntry, false);
+    fprintf(stderr, "topo_reply_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + 2 * MAX_SESSION_IDS*sizeof(int)) : len;
   
   }
   
@@ -115,11 +127,14 @@ int topo_query_peer_header(struct topo_context *context, const struct peer_cache
                            uint8_t *header, int header_len, int max_peers)
 {
     
-   fprintf(stderr, "topo_query_peer_header: RECUPERO IL FLOW_ID_SET LOCALE PER SPEDIRLO\n");
+   fprintf(stderr, "topo_query_peer_header: RECUPERO IL SESSION_ID_SET LOCALE PER SPEDIRLO\n");
    
-   int local_id_set[MAX_FLOW_IDS];
-   for(int i = 0; i < MAX_FLOW_IDS; i++){
-       local_id_set[i] = get_flow_id(i, context->myEntry);
+   int local_id_set[2 * MAX_SESSION_IDS];
+   for(int i = 0; i < MAX_SESSION_IDS; i++){
+       local_id_set[i] = get_session_id(i, context->myEntry);
+   }
+   for(int i = MAX_SESSION_IDS; i < 2 * MAX_SESSION_IDS; i++){
+       local_id_set[i] = get_distributed(i - MAX_SESSION_IDS, context->myEntry);
    }
     
   struct topo_header *h = (struct topo_header *)context->pkt;
@@ -141,29 +156,50 @@ int topo_query_peer_header(struct topo_context *context, const struct peer_cache
   int *id_set;
   id_set = local_id_set;//context->id_set;
   uint8_t *pkt;
-  if(get_sending_id_set_cycles(context->myEntry) != SENDING_ID_SET_PERIOD){
+  char str[NODE_STR_LENGTH];
+  node_addr(dst, str, NODE_STR_LENGTH);
+  fprintf(stderr, "NODO A CUI MANDARE: %s\n", str);
+  node_addr(get_last_node_recieved(context->myEntry), str, NODE_STR_LENGTH);
+  fprintf(stderr, "NODO ULTIMO RICEVUTO: %s\n", str);
+  if(!is_time_to_send_id_set(context->myEntry) || nodeid_equal(get_last_node_recieved(context->myEntry), dst)){
     
-      h->subtype = WITHOUT_FLOW_IDS_OFFER;
-    set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
-    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA FLOW_ID_SET\n");
+    h->subtype = WITHOUT_SESSION_IDS_OFFER;
+    //set_sending_id_set_cycles(context->myEntry, get_sending_id_set_cycles(context->myEntry) + 1);
+    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA SENZA SESSION_ID_SET\n");
     return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, context->pkt, shift + len) : len;
   
   }else{
     
-      h->subtype = WITH_FLOW_IDS_OFFER;
-    pkt = (uint8_t*)malloc(shift + len + MAX_FLOW_IDS*sizeof(int));
+      h->subtype = WITH_SESSION_IDS_OFFER;
+    pkt = (uint8_t*)malloc(shift + len + 2 * MAX_SESSION_IDS*sizeof(int));
     memcpy(pkt, context->pkt, shift + len);
-    memcpy(pkt + shift + len, id_set, MAX_FLOW_IDS*sizeof(int));
-    set_sending_id_set_cycles(context->myEntry, 0);
-    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON FLOW_ID_SET\n");
-    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + MAX_FLOW_IDS*sizeof(int)) : len;
+    memcpy(pkt + shift + len, id_set, 2 * MAX_SESSION_IDS*sizeof(int));
+    //set_sending_id_set_cycles(context->myEntry, 0);
+    set_time_to_send_id_set(context->myEntry, false);
+    fprintf(stderr, "topo_query_peer_header: SPEDITO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET\n");
+    return len > 0 ? send_to_peer(nodeid(context->myEntry, 0), dst, pkt, shift + len + 2 * MAX_SESSION_IDS*sizeof(int)) : len;
   
   }
   
 }
-int topo_update_random_flow_id_set(struct topo_context *context)
+int topo_update_random_session_id_set(struct topo_context *context)
 {
-    return update_random_flow_id_set(context->myEntry);
+    return update_random_session_id_set(context->myEntry);
+}
+
+void topo_proto_add_session_id(struct topo_context *context, int session_id)
+{
+    return topo_add_session_id_int(context->myEntry, session_id);
+}
+
+void topo_proto_update_session_id_set(struct topo_context *local, struct peer_cache *remote)
+{
+    return topo_update_session_id_set(local->myEntry, remote);
+}
+
+void topo_proto_set_distributed(struct topo_context *context, int session_id, bool value)
+{
+    return topo_set_distributed(context->myEntry, session_id, value);
 }
 
 int topo_query_peer(struct topo_context *context, const struct peer_cache *local_cache, struct nodeID *dst, int protocol, int type, int max_peers)
