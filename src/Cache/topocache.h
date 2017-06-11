@@ -31,9 +31,10 @@ struct peer_cache *rand_cache_except(struct peer_cache *c, int n, struct nodeID 
 void cache_randomize(const struct peer_cache *c);
 
 struct peer_cache *entries_undump(const uint8_t *buff, int size);
-struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size);
+struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size, int num_flows);
 int update_random_session_id_set(struct peer_cache *c);
 int get_session_id(int index, const struct peer_cache *c);
+int get_session_id_request(int index, const struct peer_cache *c);
 bool topo_update_session_id_set(struct peer_cache *dst, struct peer_cache *src);
 void topo_add_session_id(struct peer_cache *c, struct id_entry session_id);
 int cache_header_dump(uint8_t *b, const struct peer_cache *c, int include_me);

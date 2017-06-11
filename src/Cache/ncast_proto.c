@@ -66,6 +66,11 @@ int ncast_query(struct ncast_proto_context *context, const struct peer_cache *lo
   return topo_query_peer(context->context, local_cache, dst, MSG_TYPE_TOPOLOGY, NCAST_QUERY, 0);
 }
 
+void ncast_send_SDP(struct ncast_proto_context *context, const struct peer_cache *remote_cache)
+{
+    return topo_proto_send_SDP(context->context, remote_cache);
+}
+
 int ncast_proto_metadata_update(struct ncast_proto_context *context, const void *meta, int meta_size){
   return topo_proto_metadata_update(context->context, meta, meta_size);
 }
@@ -92,4 +97,8 @@ void ncast_proto_add_session_id(struct ncast_proto_context *context, int session
 
 void ncast_proto_set_distributed(struct ncast_proto_context *context, int session_id, bool value){
     return topo_proto_set_distributed(context->context, session_id, value);
+}
+
+void ncast_proto_set_time_to_send_id_set_request(struct ncast_proto_context *context, bool value){
+    return topo_proto_set_time_to_send_id_set_request(context->context, value);
 }

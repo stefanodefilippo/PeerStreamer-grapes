@@ -5,6 +5,7 @@ struct topo_header {
   uint8_t protocol;
   uint8_t type;
   uint8_t subtype;
+  uint8_t num_flows;
 } __attribute__((packed));
 
 #define NCAST_QUERY 0x01
@@ -19,5 +20,6 @@ struct topo_header {
 
 #define WITH_SESSION_IDS_OFFER 0x10
 #define WITHOUT_SESSION_IDS_OFFER 0x11
+#define WITH_SESSION_IDS_REQUEST 0x12
 
 #endif  /* PROTO */

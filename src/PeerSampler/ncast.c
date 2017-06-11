@@ -181,13 +181,59 @@ static int ncast_add_neighbour(struct peersampler_context *context, struct nodeI
   return ncast_query_peer(context->tc, context->local_cache, neighbour);
 }
 
+static int ncast_parse_SDP(const uint8_t *buff)
+{
+    uint8_t num_sessions;
+    uint8_t *dim_array;
+    uint8_t *session_id_array;
+    uint8_t **SDP_array;
+    num_sessions = buff[1];
+    dim_array = (uint8_t *)malloc(num_sessions * sizeof(uint8_t));
+    session_id_array = (uint8_t *)malloc(num_sessions * sizeof(uint8_t));
+    dim_array = buff+ 2 + num_sessions;
+    session_id_array = buff + 2;
+    fprintf(stderr, "ncast_parse_SDP: NUMERO FLUSSI RICEVUTI: %d\n", num_sessions);
+    for(int i = 0; i < num_sessions; i++){
+        fprintf(stderr, "ncast_parse_SDP: ID DEL SDP RICEVUTO: %d\n", session_id_array[i]);
+    }
+    for(int i = 0; i < num_sessions; i++){
+        fprintf(stderr, "ncast_parse_SDP: DIMENSIONE DEL SDP RICEVUTO: %d\n", dim_array[i]);
+    }
+    for(int i = 0; i < num_sessions; i++){
+        char *str;
+        if(i == 0){
+            str = (char *)malloc(dim_array[i] * sizeof(char));
+            memcpy(str, buff + 2 + 2 * num_sessions, dim_array[i] * sizeof(char));
+            str[dim_array[i]] = '\0';
+            fprintf(stderr, "ncast_parse_SDP: SDP RICEVUTO:\n%s\n", str);
+        }else{
+            str = (char *)malloc(dim_array[i] * sizeof(char));
+            memcpy(str, buff + 2 + 2 * num_sessions + dim_array[i - 1], dim_array[i] * sizeof(char));
+            str[dim_array[i]] = '\0';
+            fprintf(stderr, "ncast_parse_SDP: SDP RICEVUTO:\n%s\n", str);
+        }
+        char s[32];
+        strcpy(s, "SDPrec");
+        char s1[15];
+        sprintf(s1, "%d", session_id_array[i]);
+        strcat(s, s1);
+        FILE *file = fopen(s, "w");
+        fputs(str, file);
+    }
+}
+
 static int ncast_parse_data(struct peersampler_context *context, const uint8_t *buff, int len)
 {
   int dummy;
-  bool session_id_set_changed;
+  bool session_id_set_changed = false;
 
   if (len) {
     const struct topo_header *h = (const struct topo_header *)buff;
+    
+    if(h->protocol == MSG_TYPE_SDP){
+        return ncast_parse_SDP(buff);
+    }
+    
     struct peer_cache *new, *remote_cache;
 
     if (h->protocol != MSG_TYPE_TOPOLOGY) {
@@ -203,11 +249,26 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
     }
 
     if(h->subtype == WITH_SESSION_IDS_OFFER){
-        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET\n");
-        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*MAX_SESSION_IDS*sizeof(int));
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET OFFER\n");
+        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*h->num_flows*sizeof(int), h->num_flows);
+    }else if(h->subtype == WITH_SESSION_IDS_REQUEST){
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET REQUEST\n");
+        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*h->num_flows*sizeof(int), h->num_flows);
     }else{
         fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA SENZA SESSION_ID_SET\n");
         remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
+    }
+    
+    if(h->subtype == WITH_SESSION_IDS_OFFER){
+        session_id_set_changed = ncast_proto_update_session_id_set(context->tc, remote_cache);
+        if(session_id_set_changed)
+            ncast_proto_set_time_to_send_id_set_request(context->tc, true);
+    }
+    if(h->subtype == WITH_SESSION_IDS_REQUEST){
+        ncast_send_SDP(context->tc, remote_cache);
+    }
+    if(session_id_set_changed){
+        //ncast_proto_set_time_to_send_session_id_set(context->tc, true); GIA' FATTO NELLA ADD
     }
     
     if (h->type == NCAST_QUERY) {
@@ -220,12 +281,6 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
     cache_randomize(context->local_cache);
     cache_randomize(remote_cache);
     new = merge_caches(context->local_cache, remote_cache, context->cache_size, &dummy);
-    if(h->subtype == WITH_SESSION_IDS_OFFER){
-        session_id_set_changed = ncast_proto_update_session_id_set(context->tc, remote_cache);
-    }
-    if(session_id_set_changed){
-        //ncast_proto_set_time_to_send_session_id_set(context->tc, true); GIA' FATTO NELLA ADD
-    }
     cache_free(remote_cache);
     if (new != NULL) {
       cache_free(context->local_cache);
