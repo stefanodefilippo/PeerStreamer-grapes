@@ -105,12 +105,12 @@ int psample_update_random_session_id_set(struct psample_context *tc)
   return tc->ps->update_random_session_id_set(tc->ps_context);
 }
 
-void psample_add_session_id(struct psample_context *tc, int session_id)
+void psample_add_session_id(struct psample_context *tc, char * session_id)
 {
   return tc->ps->add_session_id(tc->ps_context, session_id);
 }
 
-void psample_set_distributed(struct psample_context *tc, int session_id, bool value)
+void psample_set_distributed(struct psample_context *tc, char * session_id, bool value)
 {
   return tc->ps->set_distributed(tc->ps_context, session_id, value);
 }

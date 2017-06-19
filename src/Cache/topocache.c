@@ -18,6 +18,7 @@
 #include "topocache.h"
 #include "int_coding.h"
 #define NODE_STR_LENGTH 120
+#define SESSION_ID_SIZE 32
 
 struct cache_entry {
   struct nodeID *id;
@@ -26,7 +27,7 @@ struct cache_entry {
 
 struct id_entry {
   struct nodeID *node_id;
-  int session_id;
+  char session_id[SESSION_ID_SIZE];
   bool distributed;
   char *SDP;
 };
@@ -38,13 +39,15 @@ struct peer_cache {
   int metadata_size;
   uint8_t *metadata;
   int max_timestamp;
-  int num_flows;
+  int num_sessions;
   struct id_entry *session_id_set;
   bool time_to_send_id_set;
   struct nodeID *last_recieved;
-  int num_flows_request;
+  int num_sessions_request;
   bool time_to_send_id_set_request;
-  int *session_id_set_request;
+  char session_id_set_request[MAX_SESSION_IDS][SESSION_ID_SIZE];
+  int time_to_send_id_set_no_change;
+  int SDP_policy;
 };
 
 static int cache_insert(struct peer_cache *c, struct cache_entry *e, const void *meta)
@@ -94,51 +97,55 @@ static int cache_insert(struct peer_cache *c, struct cache_entry *e, const void 
   return position;
 }
 
-void topo_add_session_id_int(struct peer_cache *c, int session_id){
+void topo_add_session_id_int(struct peer_cache *c, char * session_id){
+    fprintf(stderr, "topo_add_session_id: CHIAMO LA TOPO_ADD_SESSION_ID\n");
     struct id_entry *f_id;
     f_id = malloc(sizeof(struct id_entry));
-    f_id->session_id = session_id;
+    strcpy(f_id->session_id, session_id);
     topo_add_session_id(c, f_id[0]);
+    c->last_recieved = NULL;
 }
 
 void topo_add_session_id(struct peer_cache *c, struct id_entry session_id)
 {
-  fprintf(stderr, "topo_add_session_id: AGGIUNGO IL SESSION_ID %d\n", session_id.session_id);
+  fprintf(stderr, "topo_add_session_id: AGGIUNGO IL SESSION_ID %s\n", session_id.session_id);
   int i, position;
 
-  if (c->num_flows == MAX_SESSION_IDS) {
+  if (c->num_sessions == MAX_SESSION_IDS) {
     return -2;
   }
 
-  for (i = 0; i < c->num_flows; i++) {
+  for (i = 0; i < c->num_sessions; i++) {
 
-    if (session_id.session_id == c->session_id_set[i].session_id) {
+    if (strcmp(session_id.session_id, c->session_id_set[i].session_id) == 0) {
         return -1;
       }
 
     }
 
-  c->session_id_set[c->num_flows].session_id = session_id.session_id;
-  c->session_id_set[c->num_flows].distributed = false;
+  c->session_id_set[c->num_sessions].session_id;
+  
+  strcpy(c->session_id_set[c->num_sessions].session_id, session_id.session_id);
+  c->session_id_set[c->num_sessions].distributed = false;
   if(session_id.distributed){
-      c->session_id_set[c->num_flows].node_id = session_id.node_id;
+      c->session_id_set[c->num_sessions].node_id = session_id.node_id;
   }
   //c->session_id_set[c->num_flows].node_id = neighbour;
-  c->num_flows++;
+  c->num_sessions++;
   c->time_to_send_id_set = true;
   
   c->last_recieved = malloc(sizeof(struct nodeID *));
   c->last_recieved = session_id.node_id;
   
-  c->session_id_set_request[c->num_flows_request] = session_id.session_id;
-  c->num_flows_request++;
+  strcpy(c->session_id_set_request[c->num_sessions_request], session_id.session_id);
+  c->num_sessions_request++;
   //return position;
 }
 
 void topo_set_distributed(struct peer_cache *c, int session_id, bool value)
 {
     for(int i = 0; i < MAX_SESSION_IDS; i++){
-        if(c->session_id_set[i].session_id == session_id){
+        if(strcmp(c->session_id_set[i].session_id, session_id) == 0){
             c->session_id_set[i].distributed = true;
         }
     }
@@ -147,6 +154,11 @@ void topo_set_distributed(struct peer_cache *c, int session_id, bool value)
 void topo_set_time_to_send_id_set_request(struct peer_cache *c, bool value)
 {
     c->time_to_send_id_set_request = value;
+}
+
+void topo_set_SDP_policy(struct peer_cache *c, int * SDP_policy)
+{
+    c->SDP_policy = * SDP_policy;
 }
 
 int cache_add_cache(struct peer_cache *dst, const struct peer_cache *src)
@@ -316,7 +328,7 @@ int update_random_session_id_set(struct peer_cache *c)
     for(int i = 0; i < MAX_SESSION_IDS; i++){
         fprintf(stderr, "update_random_session_id_set: SESSION_ID AGGIORNATO DA %d ", c->session_id_set[i].session_id);
         r = rand() % 100;
-        c->session_id_set[i].session_id = r;
+        strcpy(c->session_id_set[i].session_id, r);
         fprintf(stderr, "A %d\n", c->session_id_set[i].session_id);
     }
     
@@ -332,14 +344,19 @@ bool is_time_to_send_id_set_request(struct peer_cache *c)
     return c->time_to_send_id_set_request; 
 }
 
+bool is_time_to_send_id_set_no_change(struct peer_cache *c)
+{
+    return c->time_to_send_id_set_no_change; 
+}
+
 int get_num_flows(struct peer_cache *c)
 {
-    return c->num_flows; 
+    return c->num_sessions; 
 }
 
 int get_num_flows_request(struct peer_cache *c)
 {
-    return c->num_flows_request; 
+    return c->num_sessions_request; 
 }
 
 struct nodeID *get_last_node_recieved(struct peer_cache *c)
@@ -352,6 +369,16 @@ int set_time_to_send_id_set(struct peer_cache *c, bool value)
     c->time_to_send_id_set = value; 
 }
 
+int topo_set_time_to_send_id_set_no_change(struct peer_cache *c, bool value)
+{
+    c->time_to_send_id_set_no_change = value; 
+}
+
+int topo_set_time_to_send_session_id_set(struct peer_cache *c, bool value)
+{
+    c->time_to_send_id_set = value; 
+}
+
 int set_time_to_send_id_set_request(struct peer_cache *c, bool value)
 {
     c->time_to_send_id_set_request = value; 
@@ -359,6 +386,8 @@ int set_time_to_send_id_set_request(struct peer_cache *c, bool value)
 
 struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
 {
+    
+    fprintf(stderr, "cache_init: ENTRO IN CACHE INIT\n");
   struct peer_cache *res;
 
   res = malloc(sizeof(struct peer_cache));
@@ -368,8 +397,8 @@ struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
   res->max_timestamp = max_timestamp;
   res->cache_size = n;
   res->current_size = 0;
-  res->num_flows = 0;
-  res->num_flows_request = 0;
+  res->num_sessions = 0;
+  res->num_sessions_request = 0;
   res->entries = malloc(sizeof(struct cache_entry) * n);
   if (res->entries == NULL) {
     free(res);
@@ -384,17 +413,18 @@ struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
     return NULL;
   }
   
-  res->session_id_set_request = malloc(sizeof(int) * MAX_SESSION_IDS);
+  //res->session_id_set_request = malloc(sizeof(int) * MAX_SESSION_IDS);
   
     res->last_recieved = NULL;
     /*res->last_recieved = malloc(sizeof(struct nodeID *));
     res->last_recieved = create_node("00000000", 0000);*/
   
   memset(res->entries, 0, sizeof(struct cache_entry) * n);
-  memset(res->session_id_set, 0, sizeof(struct id_entry) * MAX_SESSION_IDS);
-  memset(res->session_id_set_request, 0, sizeof(int) * MAX_SESSION_IDS);
+  //memset(res->session_id_set, 0, sizeof(struct id_entry) * MAX_SESSION_IDS);
+  //memset(res->session_id_set_request, 0, sizeof(int) * MAX_SESSION_IDS);
   res->time_to_send_id_set = false;
   res->time_to_send_id_set_request = false;
+  res->time_to_send_id_set_no_change = false;
   
   if (metadata_size) {
     res->metadata = malloc(metadata_size * n);
@@ -409,6 +439,8 @@ struct peer_cache *cache_init(int n, int metadata_size, int max_timestamp)
     res->metadata_size = 0;
   }
 
+  fprintf(stderr, "cache_init: CACHE INIZIALIZZATA\n");
+  
   return res;
 }
 
@@ -671,7 +703,7 @@ struct peer_cache *entries_undump(const uint8_t *buff, int size)
 }
 
 
-struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size, int num_flows)
+struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size, int num_sessions)
 {
   struct peer_cache *res;
   int i = 0;
@@ -703,11 +735,13 @@ struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size, int 
   assert(p - buff == size);
   
   fprintf(stderr, "RECUPERO GLI ID RICEVUTI DAL VICINO....\n");
-  for(int i = 0; i < num_flows; i++){
-      fprintf(stderr, "entries_undump_session_id: ID SESSIONE RICEVUTO DAL VICINO: %d\n", *(p));
-      fprintf(stderr, "entries_undump_session_id: SESSIONE DISTRIBUITA ATTIVAMENTE DAL VICINO? %s\n", *(p + sizeof(int) * num_flows) == 1 ? "Sì" : "No");
-      res->session_id_set[i].session_id = (*p);
-      if(*(p + sizeof(int) * num_flows) == 1){
+  char s[SESSION_ID_SIZE];
+  for(int i = 0; i < num_sessions; i++){
+      memcpy(s, p, SESSION_ID_SIZE);
+      fprintf(stderr, "entries_undump_session_id: ID SESSIONE RICEVUTO DAL VICINO: %s\n", s);
+      fprintf(stderr, "entries_undump_session_id: SESSIONE DISTRIBUITA ATTIVAMENTE DAL VICINO? %s\n", *(p + (sizeof(char)*(i-num_sessions))+i*sizeof(uint8_t)) == 1 ? "Sì" : "No");
+      strcpy(res->session_id_set[i].session_id, s);
+      if(*(p + sizeof(int) * num_sessions) == 1){
           res->session_id_set[i].distributed = true;
           res->session_id_set[i].node_id = nodeid(res, 0);
           char str[NODE_STR_LENGTH];
@@ -716,19 +750,19 @@ struct peer_cache *entries_undump_session_id(const uint8_t *buff, int size, int 
       }else{
           res->session_id_set[i].distributed = false;
       }
-      p = p + sizeof(int);
+      p = p + SESSION_ID_SIZE;
   }
   
-  res->num_flows = num_flows;
+  res->num_sessions = num_sessions;
 
   return res;
 }
 
-int get_session_id(int index, const struct peer_cache *c){
+char * get_session_id(int index, const struct peer_cache *c){
     return c->session_id_set[index].session_id;
 }
 
-int get_session_id_request(int index, const struct peer_cache *c){
+char * get_session_id_request(int index, const struct peer_cache *c){
     return c->session_id_set_request[index];
 }
 
@@ -737,8 +771,8 @@ int get_distributed(int index, const struct peer_cache *c){
 }
 
 bool contains(struct peer_cache *cache, int id){
-    for(int i = 0; i < cache->num_flows; i++){
-        if( cache->session_id_set[i].session_id == id){
+    for(int i = 0; i < cache->num_sessions; i++){
+        if(strcmp(cache->session_id_set[i].session_id, id) == 0){
             return true;
         }
     }
@@ -750,7 +784,7 @@ bool topo_update_session_id_set(struct peer_cache *local, struct peer_cache *rem
     fprintf(stderr, "topo_update_session_id_set: AGGIORNAMENTO SESSION_ID_SET LOCALE\n");
     bool res = false;
     bool already_in;
-    for(int i = 0; i < remote->num_flows; i++){
+    for(int i = 0; i < remote->num_sessions; i++){
         already_in = contains(local, remote->session_id_set[i].session_id);
         if(!already_in){
             res = true;
@@ -760,11 +794,6 @@ bool topo_update_session_id_set(struct peer_cache *local, struct peer_cache *rem
         }
     }
     return res;
-}
-
-int topo_set_time_to_send_session_id_set(struct peer_cache *dst, bool value)
-{
-    dst->time_to_send_id_set = true;
 }
 
 int cache_header_dump(uint8_t *b, const struct peer_cache *c, int include_me)

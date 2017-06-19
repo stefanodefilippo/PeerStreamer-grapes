@@ -88,17 +88,25 @@ bool ncast_proto_update_session_id_set(struct ncast_proto_context *context, stru
 }
 
 int ncast_proto_set_time_to_send_session_id_set(struct ncast_proto_context *context, bool value){
-    return topo_set_time_to_send_session_id_set(context->context, value);
+    return topo_proto_set_time_to_send_session_id_set(context->context, value);
 }
 
-void ncast_proto_add_session_id(struct ncast_proto_context *context, int session_id){
+int ncast_proto_set_time_to_send_id_set_no_change(struct ncast_proto_context *context, bool value){
+    return topo_proto_set_time_to_send_id_set_no_change(context->context, value);
+}
+
+void ncast_proto_add_session_id(struct ncast_proto_context *context, char * session_id){
     return topo_proto_add_session_id(context->context, session_id);
 }
 
-void ncast_proto_set_distributed(struct ncast_proto_context *context, int session_id, bool value){
+void ncast_proto_set_distributed(struct ncast_proto_context *context, char * session_id, bool value){
     return topo_proto_set_distributed(context->context, session_id, value);
 }
 
 void ncast_proto_set_time_to_send_id_set_request(struct ncast_proto_context *context, bool value){
     return topo_proto_set_time_to_send_id_set_request(context->context, value);
+}
+
+void ncast_proto_set_SDP_policy(struct ncast_proto_context *context, int * SDP_policy){
+    return topo_proto_set_SDP_policy(context->context, SDP_policy);
 }

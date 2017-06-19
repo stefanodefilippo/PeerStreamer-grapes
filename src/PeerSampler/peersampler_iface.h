@@ -16,8 +16,8 @@ struct peersampler_iface {
   int (*shrink_neighbourhood)(struct peersampler_context *context, int n);
   int (*remove_neighbour)(struct peersampler_context *context, const struct nodeID *neighbour);
   int (*update_random_session_id_set)(struct peersampler_context *context);
-  void (*add_session_id)(struct peersampler_context *context, int session_id);
-  void (*set_distributed)(struct peersampler_context *context, int session_id, bool value);
+  void (*add_session_id)(struct peersampler_context *context, char * session_id);
+  void (*set_distributed)(struct peersampler_context *context, char * session_id, bool value);
 };
 
 #endif	/* PEERSAMPLER_IFACE */

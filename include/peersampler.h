@@ -170,6 +170,6 @@ int psample_parse_data(struct psample_context *tc, const uint8_t *buff, int len)
 
 int psample_update_random_session_id_set(struct psample_context *tc);
 
-void psample_add_session_id(struct psample_context *tc, int session_id);
+void psample_add_session_id(struct psample_context *tc, char * session_id);
 
 #endif /* PEERSAMPLER_H */

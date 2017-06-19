@@ -26,6 +26,11 @@
 #define DEFAULT_BOOTSTRAP_CYCLES 5
 #define DEFAULT_BOOTSTRAP_PERIOD 2*1000*1000
 #define DEFAULT_PERIOD 10*1000*1000
+#define SESSION_ID_SIZE 32
+#define SEND_IN_ALL_QUERY 1
+#define SEND_AFTER_LOCAL_CHANGE 2
+#define SEND_AFTER_QUERY_SUCCESS 3
+#define SEND_AFTER_QUERY_FAILURE 4
 
 struct peersampler_context{
   uint64_t currtime;
@@ -47,6 +52,7 @@ struct peersampler_context{
   int restart;
   int randomize;
   int slowstart;
+  int SDP_policy;
 };
 
 static uint64_t gettime(void)
@@ -76,12 +82,12 @@ static int ncast_update_random_session_id_set(struct peersampler_context *contex
     return ncast_proto_update_random_session_id_set(context->tc);
 }
 
-static void ncast_add_session_id(struct peersampler_context *context, int session_id)
+static void ncast_add_session_id(struct peersampler_context *context, char * session_id)
 {
     return ncast_proto_add_session_id(context->tc, session_id);
 }
 
-static void ncast_set_distributed(struct peersampler_context *context, int session_id, bool value)
+static void ncast_set_distributed(struct peersampler_context *context, char * session_id, bool value)
 {
     return ncast_proto_set_distributed(context->tc, session_id, value);
 }
@@ -125,8 +131,11 @@ static struct peersampler_context* init(struct nodeID *myID, const void *metadat
   grapes_config_value_int_default(cfg_tags, "restart", &context->restart, plus_features);
   grapes_config_value_int_default(cfg_tags, "randomize", &context->randomize, plus_features);
   grapes_config_value_int_default(cfg_tags, "slowstart", &context->slowstart, plus_features);
+  grapes_config_value_int_default(cfg_tags, "SDP_policy", &context->SDP_policy, SEND_IN_ALL_QUERY);
   free(cfg_tags);
 
+  fprintf(stderr, "peersampler_context* init: LA SDP POLICY è: %d\n", context->SDP_policy);
+  
   context->local_cache = cache_init(context->cache_size, metadata_size, max_timestamp);
   if (context->local_cache == NULL) {
     free(context);
@@ -141,7 +150,7 @@ static struct peersampler_context* init(struct nodeID *myID, const void *metadat
     free(context);
     return NULL;
   }
-
+  
   context->query_tokens = 0;
   context->reply_tokens = 0;
   context->first_ts = (max_timestamp + 1) / 2;
@@ -184,39 +193,41 @@ static int ncast_add_neighbour(struct peersampler_context *context, struct nodeI
 static int ncast_parse_SDP(const uint8_t *buff)
 {
     uint8_t num_sessions;
-    uint8_t *dim_array;
-    uint8_t *session_id_array;
+    int *dim_array;
+    char **session_id_array;
     uint8_t **SDP_array;
     num_sessions = buff[1];
-    dim_array = (uint8_t *)malloc(num_sessions * sizeof(uint8_t));
-    session_id_array = (uint8_t *)malloc(num_sessions * sizeof(uint8_t));
-    dim_array = buff+ 2 + num_sessions;
+    session_id_array = (char **)malloc(num_sessions * sizeof(char*));
+    dim_array = (int *)malloc(num_sessions * sizeof(int));
+    memcpy(dim_array, buff + 2 + num_sessions * SESSION_ID_SIZE * sizeof(char), num_sessions * sizeof(int));
+    for(int i = 0; i < num_sessions; i++){
+        session_id_array[i] = (char*)malloc(SESSION_ID_SIZE * sizeof(char));
+        memcpy(session_id_array[i], buff + 2 + i*SESSION_ID_SIZE*sizeof(char), SESSION_ID_SIZE);
+    }
     session_id_array = buff + 2;
     fprintf(stderr, "ncast_parse_SDP: NUMERO FLUSSI RICEVUTI: %d\n", num_sessions);
     for(int i = 0; i < num_sessions; i++){
-        fprintf(stderr, "ncast_parse_SDP: ID DEL SDP RICEVUTO: %d\n", session_id_array[i]);
+        fprintf(stderr, "ncast_parse_SDP: DIMENSIONE DEL SDP RICEVUTO: %d\n", dim_array[i]);
     }
     for(int i = 0; i < num_sessions; i++){
-        fprintf(stderr, "ncast_parse_SDP: DIMENSIONE DEL SDP RICEVUTO: %d\n", dim_array[i]);
+        fprintf(stderr, "ncast_parse_SDP: ID DEL SDP RICEVUTO: %s\n", &session_id_array[i]);
     }
     for(int i = 0; i < num_sessions; i++){
         char *str;
         if(i == 0){
             str = (char *)malloc(dim_array[i] * sizeof(char));
-            memcpy(str, buff + 2 + 2 * num_sessions, dim_array[i] * sizeof(char));
+            memcpy(str, buff + 2 + num_sessions * SESSION_ID_SIZE * sizeof(char) + num_sessions * sizeof(int), dim_array[i] * sizeof(char));
             str[dim_array[i]] = '\0';
             fprintf(stderr, "ncast_parse_SDP: SDP RICEVUTO:\n%s\n", str);
         }else{
             str = (char *)malloc(dim_array[i] * sizeof(char));
-            memcpy(str, buff + 2 + 2 * num_sessions + dim_array[i - 1], dim_array[i] * sizeof(char));
+            memcpy(str, buff + 2 + num_sessions * SESSION_ID_SIZE * sizeof(char) + num_sessions * sizeof(int) + dim_array[i - 1], dim_array[i] * sizeof(char));
             str[dim_array[i]] = '\0';
             fprintf(stderr, "ncast_parse_SDP: SDP RICEVUTO:\n%s\n", str);
         }
-        char s[32];
-        strcpy(s, "SDPrec");
-        char s1[15];
-        sprintf(s1, "%d", session_id_array[i]);
-        strcat(s, s1);
+        char s[64];
+        strcpy(s, "SDP");
+        strcat(s + 3, &session_id_array[i]);
         FILE *file = fopen(s, "w");
         fputs(str, file);
     }
@@ -250,10 +261,21 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
 
     if(h->subtype == WITH_SESSION_IDS_OFFER){
         fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET OFFER\n");
-        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*h->num_flows*sizeof(int), h->num_flows);
+        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - h->num_sessions*SESSION_ID_SIZE*sizeof(char) - h->num_sessions*sizeof(uint8_t), h->num_sessions);
     }else if(h->subtype == WITH_SESSION_IDS_REQUEST){
         fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET REQUEST\n");
-        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - 2*h->num_flows*sizeof(int), h->num_flows);
+        remote_cache = entries_undump_session_id(buff + sizeof(struct topo_header), len - sizeof(struct topo_header) - h->num_sessions*SESSION_ID_SIZE*sizeof(char) - h->num_sessions*sizeof(uint8_t), h->num_sessions);
+        if(context->SDP_policy == SEND_AFTER_QUERY_SUCCESS)
+            ncast_proto_set_time_to_send_session_id_set(context->tc, true);
+        if(context->SDP_policy == SEND_AFTER_QUERY_FAILURE)
+            ncast_proto_set_time_to_send_session_id_set(context->tc, false);
+    }else if(h->subtype == SESSION_ID_NO_CHANGE){
+        fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA CON SESSION_ID_SET_NO_CHANGE\n");
+        if(context->SDP_policy == SEND_AFTER_QUERY_SUCCESS)
+            ncast_proto_set_time_to_send_session_id_set(context->tc, false);
+        if(context->SDP_policy == SEND_AFTER_QUERY_FAILURE)
+            ncast_proto_set_time_to_send_session_id_set(context->tc, true);
+        remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
     }else{
         fprintf(stderr, "ncast_parse_data: RICEVUTO MESSAGGIO DI TOPOLOGIA SENZA SESSION_ID_SET\n");
         remote_cache = entries_undump(buff + sizeof(struct topo_header), len - sizeof(struct topo_header));
@@ -261,14 +283,17 @@ static int ncast_parse_data(struct peersampler_context *context, const uint8_t *
     
     if(h->subtype == WITH_SESSION_IDS_OFFER){
         session_id_set_changed = ncast_proto_update_session_id_set(context->tc, remote_cache);
+        fprintf(stderr, "ncast_parse_data: IL MIO SESSION_ID_SET è CAMBIATO? %d\n", session_id_set_changed);
         if(session_id_set_changed)
             ncast_proto_set_time_to_send_id_set_request(context->tc, true);
+        else
+            ncast_proto_set_time_to_send_id_set_no_change(context->tc, true);
     }
     if(h->subtype == WITH_SESSION_IDS_REQUEST){
         ncast_send_SDP(context->tc, remote_cache);
     }
-    if(session_id_set_changed){
-        //ncast_proto_set_time_to_send_session_id_set(context->tc, true); GIA' FATTO NELLA ADD
+    if(context->SDP_policy == SEND_IN_ALL_QUERY){
+        ncast_proto_set_time_to_send_session_id_set(context->tc, true);
     }
     
     if (h->type == NCAST_QUERY) {
